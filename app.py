@@ -14,32 +14,40 @@ def check_twitter_account(url):
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
         
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=15)
         content = response.text
 
-        # التحقق من التعليق
-        suspension_pattern = re.compile(
-            r'<div[^>]*class="[^"]*css-175oi2r[^"]*"[^>]*>.*?Account suspended.*?X suspends accounts',
-            re.IGNORECASE | re.DOTALL
-        )
-        
-        if suspension_pattern.search(content):
-            return {
-                "status": "موقوف",
-                "icon": "⚠️",
-                "reason": "الحساب مخالف لشروط استخدام المنصة",
-                "details": "تم تعليق الحساب بواسطة إكس بسبب انتهاك القواعد",
-                "color": "red"
-            }
+        # أنماط الكشف عن الحسابات الموقوفة (محدثة)
+        suspension_patterns = [
+            r'<div[^>]*class="[^"]*css-175oi2r[^"]*"[^>]*>.*?Account suspended.*?</div>',
+            r'X suspends accounts which violate',
+            r'data-testid="empty_state_header_text"[^>]*>.*?Account suspended',
+            r'<div[^>]*class="css-146c3p1[^"]*"[^>]*>.*?Account suspended',
+            r'حساب موقوف',
+            r'تم تعليق الحساب',
+            r'account_status":"suspended"'
+        ]
+
+        # التحقق من وجود أي نمط تعليق
+        for pattern in suspension_patterns:
+            if re.search(pattern, content, re.IGNORECASE | re.DOTALL):
+                return {
+                    "status": "موقوف",
+                    "icon": "⚠️",
+                    "reason": "الحساب مخالف لشروط إكس",
+                    "details": "تم تعليق الحساب بواسطة المنصة",
+                    "color": "#ff4b4b",
+                    "snippet": re.search(pattern, content, re.IGNORECASE | re.DOTALL).group(0)[:200] + "..."
+                }
 
         # التحقق من الحسابات المحذوفة
         if re.search(r'this account doesn[\'’]t exist|الحساب غير موجود', content, re.IGNORECASE):
             return {
                 "status": "غير موجود",
                 "icon": "❌",
-                "reason": "الحساب محذوف أو الرابط خاطئ",
+                "reason": "الحساب محذوف أو غير صحيح",
                 "details": "الرجاء التأكد من اسم المستخدم",
-                "color": "orange"
+                "color": "#ffa500"
             }
 
         # إذا كان الحساب نشطاً
@@ -47,8 +55,8 @@ def check_twitter_account(url):
             "status": "نشط",
             "icon": "✅",
             "reason": "الحساب يعمل بشكل طبيعي",
-            "details": "يمكن الوصول إلى الحساب ومشاهدة المحتوى",
-            "color": "green"
+            "details": "يمكن الوصول إلى المحتوى",
+            "color": "#2ecc71"
         }
 
     except Exception as e:
@@ -56,14 +64,15 @@ def check_twitter_account(url):
             "status": "خطأ",
             "icon": "❗",
             "reason": str(e),
-            "details": "حدث خطأ أثناء محاولة التحقق",
-            "color": "gray"
+            "details": "حدث خطأ أثناء الفحص",
+            "color": "#95a5a6"
         }
 
 # واجهة المستخدم
 st.set_page_config(
-    page_title="أداة فحص حسابات تويتر/إكس الدقيقة",
-    layout="centered"
+    page_title="أداة فحص حسابات إكس الدقيقة",
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
 # تنسيق عربي
@@ -85,36 +94,42 @@ st.markdown("""
         padding: 14px !important;
         border-radius: 8px !important;
         width: 100% !important;
+        margin-top: 10px !important;
+    }
+    .result-card {
+        border-radius: 10px;
+        padding: 15px;
+        margin: 15px 0;
+        border-left: 5px solid;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🔍 أداة فحص حسابات تويتر/إكس")
+st.title("🔍 أداة فحص حسابات إكس الدقيقة")
 
 # إدخال البيانات
 url = st.text_input("أدخل رابط الحساب", placeholder="https://x.com/اسم_المستخدم")
 
-if st.button("فحص الحساب"):
+if st.button("فحص دقيق"):
     if url:
-        with st.spinner("جاري التحقق من حالة الحساب..."):
+        with st.spinner("جاري التحقق بعمق..."):
             result = check_twitter_account(url)
             
-            # عرض النتائج في بطاقة منظمة
+            # عرض النتائج
             st.markdown(f"""
-            <div style="
-                border: 2px solid {result['color']};
-                border-radius: 10px;
-                padding: 15px;
-                margin: 10px 0;
-                text-align: center;
-            ">
-                <h3>{result['icon']} الحالة: {result['status']}</h3>
+            <div class="result-card" style="border-color: {result['color']}; background-color: {result['color']}10;">
+                <h3 style="color: {result['color']}; margin-top: 0;">{result['icon']} الحالة: {result['status']}</h3>
                 <p><strong>السبب:</strong> {result['reason']}</p>
                 <p><strong>التفاصيل:</strong> {result['details']}</p>
             </div>
             """, unsafe_allow_html=True)
             
-            # تأثيرات بصرية للحالات المختلفة
+            # عرض مقتطف HTML للحسابات الموقوفة
+            if result['status'] == "موقوف":
+                with st.expander("مقتطف من كود الصفحة (للتأكد)"):
+                    st.code(result['snippet'])
+                
+            # تأثيرات بصرية
             if result['status'] == "نشط":
                 st.balloons()
             elif result['status'] == "موقوف":
@@ -123,4 +138,4 @@ if st.button("فحص الحساب"):
         st.warning("الرجاء إدخال رابط الحساب أولاً")
 
 st.markdown("---")
-st.caption("آخر تحديث: يوليو 2024 - إصدار 2.5.0")
+st.caption("🔄 تم التحديث ليدعم الهيكل الجديد لصفحات إكس - يوليو 2024")
