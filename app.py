@@ -3,125 +3,108 @@ import requests
 import re
 from bs4 import BeautifulSoup
 
-def advanced_account_check(url):
+def check_account_status(url):
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
             "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
         }
         
-        # تنظيف وتحسين الرابط
+        # تنظيف الرابط
         url = re.sub(r'https?://(www\.)?', 'https://', url.strip())
         if not url.startswith('https://'):
             url = f'https://{url}'
         
-        response = requests.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
+        response = requests.get(url, headers=headers, timeout=15)
+        content = response.text
         
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(content, 'html.parser')
         
-        # نظام متعدد الطبقات للكشف
-        checks = [
-            {
-                "name": "تحليل العلامات الوصفية",
-                "patterns": [
-                    r'meta[^>]*suspended', 
-                    r'meta[^>]*موقوف',
-                    r'account_status":"suspended"'
-                ],
-                "type": "suspension"
-            },
-            {
-                "name": "تحليل بنية الصفحة",
-                "elements": [
-                    {'name': 'div', 'attrs': {'data-testid': 'empty_state_header_text'}},
-                    {'name': 'div', 'class': 'account-suspended'},
-                    {'name': 'div', 'string': re.compile(r'Account suspended', re.I)}
-                ],
-                "type": "suspension"
-            },
-            {
-                "name": "تحليل المحتوى النصي",
-                "text_patterns": [
-                    r'X suspends accounts',
-                    r'حساب موقوف',
-                    r'تم تعليق الحساب',
-                    r'This account is suspended'
-                ],
-                "type": "suspension"
-            },
-            {
-                "name": "تحليل المحتوى النشط",
-                "elements": [
-                    {'name': 'div', 'attrs': {'data-testid': 'UserProfile'}},
-                    {'name': 'img', 'attrs': {'alt': 'Profile image'}},
-                    {'name': 'div', 'attrs': {'data-testid': 'UserDescription'}}
-                ],
-                "type": "activity"
-            }
+        # علامات التعليق الدقيقة (محدثة)
+        suspension_indicators = [
+            # الهيكل الرسمي لصفحة التعليق
+            {'element': 'div', 'attrs': {'data-testid': 'empty_state_header_text'}, 'text': 'Account suspended'},
+            {'element': 'div', 'attrs': {'data-testid': 'empty_state_body_text'}, 'text': 'X suspends accounts'},
+            
+            # العناصر الهيكلية للحسابات الموقوفة
+            {'element': 'div', 'attrs': {'class': 'css-175oi2r r-1kihuf0 r-1xk7izq'}},
+            {'element': 'div', 'attrs': {'class': 'css-175oi2r r-1kihuf0 r-1xk7izq r-f8sm7e r-jzhu7e'}},
+            
+            # النصوص العربية والإنجليزية للتعليق
+            {'text': 'حساب موقوف'},
+            {'text': 'تم تعليق الحساب'},
+            {'text': 'This account is suspended'}
         ]
-
-        findings = []
-        suspension_found = False
-        activity_found = False
-
-        for check in checks:
-            if 'patterns' in check:
-                for pattern in check['patterns']:
-                    if re.search(pattern, str(soup), re.IGNORECASE):
-                        findings.append(f"{check['name']}: وجدت {pattern}")
-                        if check['type'] == "suspension":
-                            suspension_found = True
-            
-            if 'elements' in check:
-                for element in check['elements']:
-                    if soup.find(**element):
-                        findings.append(f"{check['name']}: وجدت {str(element)}")
-                        if check['type'] == "suspension":
-                            suspension_found = True
-                        elif check['type'] == "activity":
-                            activity_found = True
-            
-            if 'text_patterns' in check:
-                for pattern in check['text_patterns']:
-                    if soup.find(string=re.compile(pattern, re.IGNORECASE)):
-                        findings.append(f"{check['name']}: وجدت {pattern}")
-                        if check['type'] == "suspension":
-                            suspension_found = True
-
-        if suspension_found:
-            return {
-                "status": "موقوف",
-                "icon": "⛔",
-                "reason": "تم تعليق الحساب رسمياً",
-                "details": "الحساب مخالف لشروط إكس",
-                "color": "#ff0000",
-                "confidence": "100%",
-                "findings": findings,
-                "html_snippet": str(soup.find('body'))[:500] + "..." if soup.find('body') else ""
-            }
         
-        if activity_found:
+        # علامات النشاط الدقيقة (محدثة)
+        activity_indicators = [
+            # عناصر الملف الشخصي النشط
+            {'element': 'div', 'attrs': {'data-testid': 'UserProfileHeader_Items'}},
+            {'element': 'div', 'attrs': {'data-testid': 'UserDescription'}},
+            {'element': 'img', 'attrs': {'alt': 'Profile image'}},
+            
+            # عناصر التغريدات
+            {'element': 'div', 'attrs': {'data-testid': 'tweet'}},
+            {'element': 'article', 'attrs': {'role': 'article'}},
+            
+            # عناصر المتابعة
+            {'element': 'div', 'attrs': {'data-testid': 'placementTracking'}},
+            {'element': 'button', 'attrs': {'data-testid': '1933527364975087616-follow'}}
+        ]
+        
+        # التحقق من التعليق
+        for indicator in suspension_indicators:
+            if 'element' in indicator and 'attrs' in indicator:
+                element = soup.find(indicator['element'], attrs=indicator['attrs'])
+                if element:
+                    if 'text' in indicator:
+                        if re.search(indicator['text'], element.get_text(), re.IGNORECASE):
+                            return {
+                                "status": "موقوف",
+                                "icon": "⛔",
+                                "reason": "الحساب مخالف لشروط إكس",
+                                "details": "تم اكتشاف علامات التعليق الرسمية",
+                                "evidence": str(element)[:200] + "..."
+                            }
+                    else:
+                        return {
+                            "status": "موقوف",
+                            "icon": "⛔",
+                            "reason": "الحساب مخالف لشروط إكس",
+                            "details": "تم اكتشاف هيكل الصفحة الموقوفة",
+                            "evidence": str(element)[:200] + "..."
+                        }
+            elif 'text' in indicator:
+                if re.search(indicator['text'], content, re.IGNORECASE):
+                    return {
+                        "status": "موقوف",
+                        "icon": "⛔",
+                        "reason": "الحساب مخالف لشروط إكس",
+                        "details": "تم العثور على نص التعليق",
+                        "evidence": re.search(indicator['text'], content, re.IGNORECASE).group(0)
+                    }
+        
+        # التحقق من النشاط
+        active_elements = []
+        for indicator in activity_indicators:
+            if soup.find(indicator['element'], attrs=indicator.get('attrs', {})):
+                active_elements.append(indicator['element'])
+        
+        if active_elements:
             return {
                 "status": "نشط",
                 "icon": "✅",
                 "reason": "الحساب يعمل بشكل طبيعي",
-                "details": "تم العثور على محتوى نشط",
-                "color": "#00aa00",
-                "confidence": "95%",
-                "findings": findings,
-                "html_snippet": ""
+                "details": f"تم العثور على: {', '.join(active_elements)}",
+                "evidence": "محتوى الملف الشخصي والتغريدات موجودة"
             }
-
+        
         return {
             "status": "غير محدد",
             "icon": "❓",
             "reason": "لا يمكن تحديد الحالة بدقة",
-            "details": "لم يتم العثور على محتوى واضح",
-            "color": "#ffcc00",
-            "confidence": "50%",
-            "findings": findings,
-            "html_snippet": str(soup)[:500] + "..."
+            "details": "لم يتم العثور على بيانات كافية",
+            "evidence": "لا يوجد محتوى واضح"
         }
 
     except requests.HTTPError as e:
@@ -131,16 +114,14 @@ def advanced_account_check(url):
                 "icon": "❌",
                 "reason": "الحساب محذوف أو غير صحيح",
                 "details": "الرمز 404: الصفحة غير موجودة",
-                "color": "#990000",
-                "confidence": "100%"
+                "evidence": "استجابة الخادم: 404"
             }
         return {
             "status": "خطأ",
             "icon": "❗",
-            "reason": f"خطأ HTTP: {e.response.status_code}",
+            "reason": f"خطأ في الاتصال: {e.response.status_code}",
             "details": str(e),
-            "color": "#666666",
-            "confidence": "0%"
+            "evidence": "حدث خطأ أثناء محاولة الوصول للحساب"
         }
     except Exception as e:
         return {
@@ -148,138 +129,100 @@ def advanced_account_check(url):
             "icon": "❗",
             "reason": "خطأ غير متوقع",
             "details": str(e),
-            "color": "#333333",
-            "confidence": "0%"
+            "evidence": "حدث خطأ غير متوقع"
         }
 
 # واجهة المستخدم
 st.set_page_config(
-    page_title="نظام فحص حسابات إكس الاحترافي",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="أداة فحص حسابات تويتر/إكس الدقيقة",
+    layout="centered"
 )
 
-# CSS متقدم
+# تنسيق عربي
 st.markdown("""
 <style>
     .rtl {
         direction: rtl;
         text-align: right;
     }
-    .header {
-        background: linear-gradient(90deg, #1DA1F2 0%, #0066FF 100%);
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 30px;
+    .suspended {
+        color: #ff0000;
+        font-weight: bold;
+        border-right: 5px solid #ff0000;
+        padding-right: 10px;
     }
-    .result-card {
-        border-radius: 10px;
-        padding: 20px;
-        margin: 15px 0;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    .active {
+        color: #00aa00;
+        font-weight: bold;
+        border-right: 5px solid #00aa00;
+        padding-right: 10px;
     }
-    .finding-item {
+    .unknown {
+        color: #ffcc00;
+        font-weight: bold;
+    }
+    .error {
+        color: #666666;
+        font-weight: bold;
+    }
+    .evidence {
+        background-color: #f5f5f5;
         padding: 10px;
-        margin: 5px 0;
-        background-color: #f8f9fa;
         border-radius: 5px;
-        border-right: 3px solid #1DA1F2;
+        margin-top: 10px;
+        font-family: monospace;
+        overflow-x: auto;
     }
-    .stTextInput input {
-        padding: 15px !important;
-        font-size: 16px !important;
-    }
-    .stButton button {
-        background: linear-gradient(90deg, #1DA1F2 0%, #0066FF 100%) !important;
-        color: white !important;
-        font-size: 18px !important;
-        height: 60px !important;
-        border-radius: 8px !important;
-    }
-    .suspended { color: #ff0000; }
-    .active { color: #00aa00; }
-    .unknown { color: #ffcc00; }
-    .error { color: #666666; }
 </style>
 """, unsafe_allow_html=True)
 
-# الهيكل الرئيسي
-st.markdown('<div class="header rtl"><h1>نظام فحص حسابات إكس الاحترافي</h1><p>أداة متقدمة لاكتشاف الحسابات الموقوفة بدقة 100%</p></div>', unsafe_allow_html=True)
+st.title("🔍 أداة فحص حسابات تويتر/إكس")
 
-col1, col2 = st.columns([3, 1])
+url = st.text_input("أدخل رابط الحساب", placeholder="https://x.com/اسم_المستخدم")
 
-with col1:
-    url = st.text_input("رابط الحساب", placeholder="https://x.com/اسم_المستخدم", key="url_input")
-    
-    if st.button("فحص احترافي", key="check_button"):
-        if url:
-            with st.spinner("جاري التحليل المتعمق، قد يستغرق حتى 20 ثانية..."):
-                result = advanced_account_check(url)
+if st.button("فحص الحساب"):
+    if url:
+        with st.spinner("جاري التحقق بدقة..."):
+            result = check_account_status(url)
+            
+            # عرض النتائج
+            status_class = {
+                "موقوف": "suspended",
+                "نشط": "active",
+                "غير محدد": "unknown",
+                "خطأ": "error",
+                "غير موجود": "error"
+            }.get(result['status'], "")
+            
+            st.markdown(f"""
+            <div class="rtl">
+                <h3 class="{status_class}">{result['icon']} الحالة: {result['status']}</h3>
+                <p><strong>السبب:</strong> {result['reason']}</p>
+                <p><strong>التفاصيل:</strong> {result['details']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # عرض أدلة الإثبات
+            with st.expander("أدلة الإثبات التقنية"):
+                st.write("**الدليل:**")
+                st.code(result['evidence'], language='html')
                 
-                # عرض النتائج الرئيسية
-                status_class = {
-                    "موقوف": "suspended",
-                    "نشط": "active",
-                    "غير محدد": "unknown",
-                    "خطأ": "error",
-                    "غير موجود": "error"
-                }.get(result['status'], "")
-                
-                st.markdown(f"""
-                <div class="result-card rtl">
-                    <h2 class="{status_class}">{result['icon']} الحالة: {result['status']}</h2>
-                    <p><strong>مستوى الثقة:</strong> {result.get('confidence', 'غير معروف')}</p>
-                    <p><strong>السبب:</strong> {result['reason']}</p>
-                    <p><strong>التفاصيل:</strong> {result['details']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # عرض النتائج التفصيلية
-                with st.expander("التقرير التفصيلي (للمديرين)"):
-                    if 'findings' in result and result['findings']:
-                        st.write("### نتائج التحليل المتقدم:")
-                        for finding in result['findings']:
-                            st.markdown(f'<div class="finding-item rtl">{finding}</div>', unsafe_allow_html=True)
-                    
-                    if 'html_snippet' in result and result['html_snippet']:
-                        st.write("### مقتطف من كود الصفحة:")
-                        st.code(result['html_snippet'])
-                
-                # تأثيرات بصرية
-                if result['status'] == "نشط":
-                    st.balloons()
-                elif result['status'] == "موقوف":
-                    st.error("تنبيه: هذا الحساب موقوف رسمياً")
-                    st.markdown("""
-                    <div class="rtl">
-                        <h4>إجراءات مقترحة:</h4>
-                        <ol>
-                            <li>تأكيد التعليق مع فريق إكس</li>
-                            <li>مراجعة سياسات المنصة</li>
-                            <li>التواصل مع صاحب الحساب إذا لزم الأمر</li>
-                        </ol>
-                    </div>
-                    """, unsafe_allow_html=True)
-        else:
-            st.warning("الرجاء إدخال رابط الحساب أولاً")
-
-with col2:
-    st.markdown("""
-    <div class="rtl">
-        <h3>🎯 دليل سريع:</h3>
-        <p><strong>الحسابات النشطة:</strong> ✅</p>
-        <p><strong>الحسابات الموقوفة:</strong> ⛔</p>
-        <p><strong>الحسابات المحذوفة:</strong> ❌</p>
-        
-        <h3>🔍 نصائح للفحص:</h3>
-        <ul>
-            <li>تأكد من كتابة الرابط بشكل صحيح</li>
-            <li>النتائج الدقيقة قد تستغرق 20 ثانية</li>
-            <li>استخدم التقرير التفصيلي للإثبات</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
+                if result['status'] == "موقوف":
+                    st.warning("""
+                    العلامات الدالة على التعليق:
+                    1. وجود نص 'Account suspended' أو 'حساب موقوف'
+                    2. وجود عنصر data-testid='empty_state_header_text'
+                    3. ذكر 'X suspends accounts which violate'
+                    """)
+                elif result['status'] == "نشط":
+                    st.info("""
+                    العلامات الدالة على النشاط:
+                    1. وجود وصف المستخدم (UserDescription)
+                    2. وجود عناصر الملف الشخصي (UserProfileHeader_Items)
+                    3. وجود زر المتابعة (Follow button)
+                    """)
+    else:
+        st.warning("الرجاء إدخال رابط الحساب أولاً")
 
 st.markdown("---")
-st.markdown('<div class="rtl"><p>© 2024 نظام الفحص الاحترافي - إصدار 3.1.0 | تم التحديث ليدعم أحدث تغييرات إكس</p></div>', unsafe_allow_html=True)
+st.caption("ℹ️ تم التحديث ليدعم أحدث تغييرات تويتر/إكس - يوليو 2024")
