@@ -20,7 +20,7 @@ def check_account_status(url, platform):
             return "✅ نشط"
 
         elif platform == "Twitter":
-            if "account suspended" in content:
+            if "account suspended" in content or "x suspends accounts" in content:
                 return "⚠️ موقوف"
             elif "this account doesn’t exist" in content or "page doesn’t exist" in content:
                 return "❌ غير موجود"
