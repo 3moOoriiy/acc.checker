@@ -1,458 +1,383 @@
 import streamlit as st
 import requests
 import re
-from bs4 import BeautifulSoup
+import json
 import time
+from urllib.parse import urlparse, quote
 
-def advanced_x_account_check(url):
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "DNT": "1",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
-        }
-        
-        # تنظيف الرابط
-        url = re.sub(r'https?://(www\.)?', 'https://', url.strip())
-        url = url.replace('twitter.com', 'x.com')  # تحويل روابط تويتر القديمة
-        if not url.startswith('https://'):
-            url = f'https://{url}'
-        
-        response = requests.get(url, headers=headers, timeout=30)
-        
-        # التحقق من رمز الاستجابة أولاً
-        if response.status_code == 404:
-            return {
-                "status": "❌ الحساب غير موجود",
-                "details": "هذا الحساب غير متوفر أو تم حذفه",
-                "reason": "الرابط غير صحيح أو الحساب محذوف نهائياً",
-                "confidence": "100%",
-                "evidence": f"كود HTTP: {response.status_code}",
-                "color": "error"
-            }
-        
-        if response.status_code == 403:
-            return {
-                "status": "🔒 الحساب محمي/خاص",
-                "details": "هذا الحساب محمي ويحتاج موافقة للوصول إليه",
-                "reason": "الحساب مقفول على المتابعين المعتمدين فقط",
-                "confidence": "100%",
-                "evidence": f"كود HTTP: {response.status_code}",
-                "color": "warning"
-            }
+def check_x_account_status(url):
+    """فحص حالة حساب إكس بطرق متعددة"""
+    
+    # تنظيف الرابط واستخراج اسم المستخدم
+    def extract_username(url):
+        try:
+            url = url.strip()
+            if not url.startswith('http'):
+                url = 'https://' + url
             
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        def check_suspension():
-            """فحص إذا كان الحساب موقوف"""
-            suspension_patterns = [
-                # النصوص الإنجليزية
-                'Account suspended',
-                'This account has been suspended',
-                'suspended',
-                # النصوص العربية
+            # استخراج اسم المستخدم من أنواع مختلفة من الروابط
+            patterns = [
+                r'(?:twitter\.com|x\.com)/([^/?]+)',
+                r'@(\w+)',
+                r'^(\w+)$'  # اسم المستخدم فقط
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, url)
+                if match:
+                    username = match.group(1)
+                    # تنظيف اسم المستخدم
+                    username = re.sub(r'[^a-zA-Z0-9_]', '', username)
+                    return username.lower()
+            return None
+        except:
+            return None
+
+    username = extract_username(url)
+    if not username:
+        return {
+            "status": "❌ خطأ في الرابط",
+            "details": "لم نتمكن من استخراج اسم المستخدم من الرابط",
+            "reason": "تأكد من كتابة الرابط بشكل صحيح",
+            "confidence": "100%",
+            "evidence": "رابط غير صالح",
+            "color": "error",
+            "username": ""
+        }
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
+
+    results = {}
+    
+    # الطريقة 1: فحص صفحة الملف الشخصي مباشرة
+    def method1_direct_check():
+        try:
+            profile_url = f"https://x.com/{username}"
+            response = requests.get(profile_url, headers=headers, timeout=15, allow_redirects=True)
+            
+            # تحليل رمز الاستجابة
+            if response.status_code == 404:
+                return "not_found"
+            elif response.status_code == 403:
+                return "forbidden"
+            elif response.status_code == 302 or response.status_code == 301:
+                if 'suspended' in response.url:
+                    return "suspended"
+            
+            content = response.text.lower()
+            
+            # فحص علامات التعليق
+            suspension_signs = [
+                'account suspended',
+                'suspended account',
+                'this account has been suspended',
                 'حساب موقوف',
-                'تم تعليق الحساب',
-                'الحساب معلق',
-                # في JSON أو البيانات
-                '"account_status":"suspended"',
-                '"suspended":true'
+                'تم تعليق'
             ]
             
-            page_text = response.text.lower()
-            for pattern in suspension_patterns:
-                if pattern.lower() in page_text:
-                    return True
-                    
-            # فحص العناصر المحددة
-            suspension_selectors = [
-                'div[data-testid="empty_state_header_text"]',
-                'div[data-testid="emptyState"]',
-                'span[data-testid="UserDescription"]'
+            for sign in suspension_signs:
+                if sign in content:
+                    return "suspended"
+            
+            # فحص علامات الحماية
+            protection_signs = [
+                'protected account',
+                'these tweets are protected',
+                'this account\'s tweets are protected',
+                'محمي',
+                'خاص'
             ]
             
-            for selector in suspension_selectors:
-                elements = soup.select(selector)
-                for element in elements:
-                    if element and any(word in element.get_text().lower() 
-                                     for word in ['suspended', 'موقوف', 'معلق']):
-                        return True
+            for sign in protection_signs:
+                if sign in content:
+                    return "protected"
             
-            return False
-
-        def check_private_account():
-            """فحص إذا كان الحساب خاص/محمي"""
-            private_indicators = [
-                'This account\'s posts are protected',
-                'These posts are protected',
-                'محمية',
-                'خاص',
-                'protected',
-                'private'
+            # فحص علامات النشاط
+            activity_signs = [
+                '"screen_name"',
+                'profilepic',
+                'tweet',
+                'following',
+                'followers'
             ]
             
-            page_text = response.text.lower()
-            for indicator in private_indicators:
-                if indicator.lower() in page_text:
-                    return True
-                    
-            # البحث عن أيقونة القفل
-            lock_elements = soup.find_all(['svg', 'span'], class_=re.compile(r'.*lock.*|.*private.*|.*protected.*'))
-            if lock_elements:
-                return True
+            activity_count = sum(1 for sign in activity_signs if sign in content)
+            if activity_count >= 2:
+                return "active"
+            
+            return "unknown"
+            
+        except requests.exceptions.RequestException:
+            return "error"
+    
+    # الطريقة 2: فحص API غير رسمي
+    def method2_api_check():
+        try:
+            # استخدام نقطة نهاية عامة للفحص
+            api_url = f"https://api.twitter.com/1.1/users/show.json?screen_name={username}"
+            
+            # محاولة الوصول دون مفتاح API (سيعطي معلومات عن وجود الحساب)
+            response = requests.get(api_url, headers=headers, timeout=10)
+            
+            if response.status_code == 404:
+                return "not_found"
+            elif response.status_code == 403:
+                # قد يكون محمي أو موقوف
+                error_text = response.text.lower()
+                if 'suspended' in error_text:
+                    return "suspended"
+                else:
+                    return "protected"
+            elif response.status_code == 401:
+                # يحتاج API key، لكن الحساب موجود
+                return "exists"
+            
+            return "unknown"
+            
+        except:
+            return "error"
+    
+    # الطريقة 3: فحص البحث العام
+    def method3_search_check():
+        try:
+            search_url = f"https://x.com/search?q=from%3A{username}&src=typed_query"
+            response = requests.get(search_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                content = response.text.lower()
                 
-            return False
-
-        def check_activity():
-            """فحص إذا كان الحساب نشط"""
-            activity_indicators = [
-                # معلومات الملف الشخصي
-                {'selector': 'div[data-testid="UserName"]'},
-                {'selector': 'div[data-testid="UserDescription"]'},
-                {'selector': 'div[data-testid="UserProfileHeader_Items"]'},
-                # التغريدات والمحتوى
-                {'selector': 'div[data-testid="tweet"]'},
-                {'selector': 'article[data-testid="tweet"]'},
-                {'selector': 'div[data-testid="primaryColumn"]'},
-                # الصورة الشخصية والغلاف
-                {'selector': 'img[alt*="profile" i]'},
-                {'selector': 'img[src*="profile_images"]'},
-                # معلومات المتابعة
-                {'selector': 'a[href*="/followers"]'},
-                {'selector': 'a[href*="/following"]'},
-                # الشريط الجانبي
-                {'selector': 'div[data-testid="sidebarColumn"]'}
-            ]
+                if 'no results' in content or 'لم يتم العثور' in content:
+                    return "inactive_or_suspended"
+                elif username in content:
+                    return "active"
             
-            found_indicators = 0
-            for indicator in activity_indicators:
-                try:
-                    elements = soup.select(indicator['selector'])
-                    if elements:
-                        found_indicators += 1
-                except Exception:
-                    continue
+            return "unknown"
             
-            # إذا وُجد 3 مؤشرات أو أكثر، الحساب نشط
-            return found_indicators >= 3
-
-        def check_account_exists():
-            """فحص وجود الحساب من الأساس"""
-            # البحث عن علامات وجود الحساب
-            existence_indicators = [
-                'div[data-testid="UserName"]',
-                'div[data-testid="UserScreenName"]',
-                'meta[property="og:title"]',
-                'title'
-            ]
-            
-            for selector in existence_indicators:
-                if soup.select(selector):
-                    return True
-            return False
-
-        # تنفيذ الفحوصات بالترتيب
-        
-        # أولاً: فحص التعليق
-        if check_suspension():
-            return {
-                "status": "⛔ الحساب موقوف",
-                "details": "تم تعليق هذا الحساب من قبل إدارة منصة إكس",
-                "reason": "انتهاك قوانين المنصة أو شروط الاستخدام",
-                "confidence": "95%",
-                "evidence": "تم اكتشاف علامات التعليق الرسمية في صفحة الحساب",
-                "color": "error"
-            }
-        
-        # ثانياً: فحص الخصوصية
-        if check_private_account():
-            return {
-                "status": "🔒 الحساب محمي",
-                "details": "هذا الحساب محمي ولا يمكن رؤية منشوراته إلا للمتابعين المعتمدين",
-                "reason": "إعدادات الخصوصية مفعلة - حساب خاص",
-                "confidence": "90%",
-                "evidence": "تم اكتشاف علامات الحماية في الملف الشخصي",
-                "color": "warning"
-            }
-        
-        # ثالثاً: فحص النشاط
-        if check_activity():
-            return {
-                "status": "✅ الحساب نشط",
-                "details": "الحساب يعمل بشكل طبيعي ويمكن الوصول إلى محتواه",
-                "reason": "جميع عناصر الملف الشخصي والمحتوى متاحة",
-                "confidence": "98%",
-                "evidence": "تم اكتشاف عناصر الملف الشخصي والتغريدات والمحتوى",
-                "color": "success"
-            }
-        
-        # رابعاً: فحص الوجود
-        if check_account_exists():
-            return {
-                "status": "❓ حالة غير واضحة",
-                "details": "الحساب موجود لكن لا يمكن تحديد حالته بدقة",
-                "reason": "قد يكون الحساب جديد أو به مشاكل في التحميل",
-                "confidence": "60%",
-                "evidence": "تم العثور على بيانات الحساب الأساسية فقط",
-                "color": "info"
-            }
-        
-        # إذا لم نجد أي شيء
+        except:
+            return "error"
+    
+    # تنفيذ الفحوصات
+    result1 = method1_direct_check()
+    time.sleep(1)  # انتظار قصير بين الطلبات
+    result2 = method2_api_check()
+    time.sleep(1)
+    result3 = method3_search_check()
+    
+    # تحليل النتائج المدمجة
+    results_list = [result1, result2, result3]
+    
+    # منطق القرار
+    if "suspended" in results_list:
         return {
-            "status": "❌ غير محدد",
-            "details": "لم نتمكن من تحديد حالة الحساب",
-            "reason": "بيانات غير كافية أو تغييرات في بنية الموقع",
-            "confidence": "30%",
-            "evidence": "لم يتم العثور على مؤشرات واضحة",
-            "color": "error"
+            "status": "⛔ الحساب موقوف",
+            "details": "تم تعليق هذا الحساب من قبل إدارة منصة إكس",
+            "reason": "انتهاك قوانين المنصة أو شروط الاستخدام",
+            "confidence": "90%",
+            "evidence": f"نتائج الفحص: {results_list}",
+            "color": "error",
+            "username": username
         }
-
-    except requests.HTTPError as e:
-        status_messages = {
-            400: ("❌ خطأ في الطلب", "الرابط المدخل غير صحيح"),
-            401: ("🔐 يتطلب تسجيل دخول", "الحساب يحتاج تسجيل دخول للوصول"),
-            403: ("🔒 الدخول مرفوض", "الحساب محمي أو هناك قيود على الوصول"),
-            404: ("❌ الحساب غير موجود", "الحساب محذوف أو اسم المستخدم غير صحيح"),
-            429: ("⏳ كثرة الطلبات", "تم تجاوز حد الطلبات، حاول مرة أخرى لاحقاً"),
-            500: ("🔧 خطأ في الخادم", "مشكلة تقنية في منصة إكس"),
-        }
-        
-        status_info = status_messages.get(
-            e.response.status_code, 
-            (f"❌ خطأ {e.response.status_code}", "حدث خطأ غير متوقع")
-        )
-        
+    
+    if "not_found" in results_list and results_list.count("not_found") >= 2:
         return {
-            "status": status_info[0],
-            "details": status_info[1],
-            "reason": f"رمز الاستجابة: {e.response.status_code}",
-            "confidence": "100%",
-            "evidence": f"HTTP Error: {str(e)}",
-            "color": "error"
+            "status": "❌ الحساب غير موجود",
+            "details": "هذا الحساب غير متوفر أو تم حذفه",
+            "reason": "الحساب محذوف أو اسم المستخدم غير صحيح",
+            "confidence": "95%",
+            "evidence": f"نتائج الفحص: {results_list}",
+            "color": "error",
+            "username": username
         }
-        
-    except requests.ConnectionError:
+    
+    if "protected" in results_list or "forbidden" in results_list:
         return {
-            "status": "🌐 خطأ في الاتصال",
-            "details": "لا يمكن الوصول إلى منصة إكس",
-            "reason": "مشكلة في الاتصال بالإنترنت أو حجب الموقع",
-            "confidence": "100%",
-            "evidence": "Connection Error",
-            "color": "error"
+            "status": "🔒 الحساب محمي",
+            "details": "هذا الحساب محمي ولا يمكن رؤية منشوراته إلا للمتابعين المعتمدين",
+            "reason": "إعدادات الخصوصية مفعلة - حساب خاص",
+            "confidence": "85%",
+            "evidence": f"نتائج الفحص: {results_list}",
+            "color": "warning",
+            "username": username
         }
-        
-    except requests.Timeout:
+    
+    if "active" in results_list or "exists" in results_list:
         return {
-            "status": "⏱️ انتهت مهلة الانتظار",
-            "details": "استغرق الطلب وقتاً طويلاً",
-            "reason": "بطء في الشبكة أو مشاكل في الخادم",
-            "confidence": "100%",
-            "evidence": "Timeout Error",
-            "color": "warning"
+            "status": "✅ الحساب نشط",
+            "details": "الحساب يعمل بشكل طبيعي ويمكن الوصول إليه",
+            "reason": "تم العثور على مؤشرات النشاط والمحتوى",
+            "confidence": "80%",
+            "evidence": f"نتائج الفحص: {results_list}",
+            "color": "success",
+            "username": username
         }
-        
-    except Exception as e:
-        return {
-            "status": "🔧 خطأ تقني",
-            "details": "حدث خطأ غير متوقع أثناء التحليل",
-            "reason": "مشكلة تقنية في التطبيق",
-            "confidence": "0%",
-            "evidence": str(e)[:100] + "..." if len(str(e)) > 100 else str(e),
-            "color": "error"
-        }
+    
+    # إذا كانت النتائج مختلطة أو غير واضحة
+    return {
+        "status": "❓ حالة غير واضحة",
+        "details": "لم نتمكن من تحديد حالة الحساب بدقة كافية",
+        "reason": "نتائج متضاربة أو مشاكل في الوصول للبيانات",
+        "confidence": "50%",
+        "evidence": f"نتائج الفحص: {results_list}",
+        "color": "info",
+        "username": username
+    }
 
 # إعداد الصفحة
 st.set_page_config(
-    page_title="أداة فحص حسابات إكس المطورة",
+    page_title="فاحص حسابات إكس - مطور",
     page_icon="🔍",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# CSS محسن
+# CSS
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
     
-    .main {
-        direction: rtl;
+    * {
         font-family: 'Cairo', 'Tahoma', sans-serif;
     }
     
+    .main {
+        direction: rtl;
+        text-align: right;
+    }
+    
     .header {
-        background: linear-gradient(135deg, #1DA1F2 0%, #0d8bd9 100%);
+        background: linear-gradient(135deg, #1da1f2, #0d8bd9);
         color: white;
-        padding: 30px;
+        padding: 2rem;
         border-radius: 15px;
         text-align: center;
-        margin-bottom: 30px;
-        box-shadow: 0 4px 15px rgba(29, 161, 242, 0.3);
-    }
-    
-    .header h1 {
-        margin: 0;
-        font-size: 2.5em;
-        font-weight: 700;
-    }
-    
-    .header p {
-        margin: 10px 0 0 0;
-        font-size: 1.2em;
-        opacity: 0.9;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 30px rgba(29, 161, 242, 0.3);
     }
     
     .result-success {
-        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        background: linear-gradient(135deg, #28a745, #20c997);
         color: white;
-        border: none;
-        box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
     }
     
     .result-error {
-        background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);
+        background: linear-gradient(135deg, #dc3545, #e74c3c);
         color: white;
-        border: none;
-        box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
     }
     
     .result-warning {
-        background: linear-gradient(135deg, #ffc107 0%, #ffab00 100%);
-        color: #333;
-        border: none;
-        box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3);
+        background: linear-gradient(135deg, #ffc107, #ffab00);
+        color: #212529;
     }
     
     .result-info {
-        background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+        background: linear-gradient(135deg, #17a2b8, #138496);
         color: white;
-        border: none;
-        box-shadow: 0 4px 15px rgba(23, 162, 184, 0.3);
     }
     
     .result-card {
+        padding: 2rem;
         border-radius: 15px;
-        padding: 25px;
-        margin: 20px 0;
+        margin: 1.5rem 0;
         text-align: center;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
     }
     
-    .result-card h2 {
-        font-size: 2em;
-        margin-bottom: 15px;
-        font-weight: 600;
-    }
-    
-    .result-card p {
-        font-size: 1.1em;
-        margin: 8px 0;
-        line-height: 1.6;
-    }
-    
-    .guide-box {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border: 2px solid #dee2e6;
+    .guide-section {
+        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+        padding: 2rem;
         border-radius: 15px;
-        padding: 25px;
-        margin: 20px 0;
+        border: 2px solid #dee2e6;
+        margin: 1rem 0;
     }
     
-    .guide-box h3 {
-        color: #495057;
-        border-bottom: 2px solid #007bff;
-        padding-bottom: 10px;
-        margin-bottom: 15px;
-    }
-    
-    .status-legend {
-        display: grid;
-        gap: 10px;
-        margin: 15px 0;
-    }
-    
-    .status-item {
-        padding: 10px 15px;
+    .status-example {
+        padding: 1rem;
+        margin: 0.5rem 0;
         border-radius: 8px;
         border-right: 4px solid;
-        font-weight: 500;
     }
     
     .status-active { background: #d4edda; border-color: #28a745; }
     .status-suspended { background: #f8d7da; border-color: #dc3545; }
     .status-protected { background: #fff3cd; border-color: #ffc107; }
-    .status-notfound { background: #f1f3f4; border-color: #6c757d; }
-    
-    .stTextInput > div > div > input {
-        text-align: right;
-        font-size: 18px;
-        padding: 15px;
-        border-radius: 10px;
-        border: 2px solid #dee2e6;
-        transition: all 0.3s ease;
-    }
-    
-    .stTextInput > div > div > input:focus {
-        border-color: #007bff;
-        box-shadow: 0 0 10px rgba(0, 123, 255, 0.3);
-    }
+    .status-notfound { background: #e2e3e5; border-color: #6c757d; }
     
     .stButton > button {
-        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-        color: white;
+        background: linear-gradient(135deg, #007bff, #0056b3);
         border: none;
         border-radius: 10px;
-        padding: 15px 30px;
-        font-size: 18px;
+        color: white;
         font-weight: 600;
+        padding: 0.75rem 2rem;
+        font-size: 1.1rem;
         width: 100%;
         transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
     }
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
+        box-shadow: 0 8px 25px rgba(0, 123, 255, 0.3);
     }
     
-    .footer {
-        text-align: center;
-        padding: 30px;
-        color: #6c757d;
-        border-top: 2px solid #dee2e6;
-        margin-top: 50px;
+    .stTextInput input {
+        text-align: right !important;
+        font-size: 1.1rem !important;
+        padding: 1rem !important;
+        border-radius: 10px !important;
+        border: 2px solid #dee2e6 !important;
+    }
+    
+    .username-display {
+        background: #007bff;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        display: inline-block;
+        font-weight: 600;
+        margin: 1rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# واجهة التطبيق الرئيسية
+# واجهة التطبيق
 st.markdown("""
 <div class="header">
-    <h1>🔍 أداة فحص حسابات إكس المطورة</h1>
-    <p>اكتشف حالة أي حساب على منصة إكس بدقة عالية - نشط، موقوف، محمي، أو محذوف</p>
+    <h1>🔍 فاحص حسابات إكس المطور</h1>
+    <p>أداة متقدمة لفحص حالة أي حساب على منصة إكس بطرق متعددة</p>
 </div>
 """, unsafe_allow_html=True)
 
-# تقسيم الشاشة
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.markdown("### 📝 إدخال رابط الحساب")
-    url = st.text_input(
+    st.markdown("### 📝 أدخل رابط الحساب أو اسم المستخدم")
+    
+    url_input = st.text_input(
         "",
-        placeholder="https://x.com/اسم_المستخدم أو https://twitter.com/username",
-        help="أدخل الرابط الكامل للحساب أو مع اسم المستخدم فقط"
+        placeholder="https://x.com/username أو @username أو username",
+        help="يمكنك إدخال الرابط كاملاً أو اسم المستخدم فقط"
     )
     
-    if st.button("🔍 فحص الحساب الآن", key="check_button"):
-        if url.strip():
-            with st.spinner("🔄 جاري تحليل الحساب... قد يستغرق هذا بضع ثواني"):
-                result = advanced_x_account_check(url.strip())
+    if st.button("🔍 فحص الحساب", key="check_account"):
+        if url_input.strip():
+            with st.spinner("🔄 جاري الفحص بطرق متعددة... قد يستغرق 10-15 ثانية"):
+                result = check_x_account_status(url_input.strip())
                 
-                # عرض النتيجة مع التنسيق المناسب
+                # عرض اسم المستخدم المستخرج
+                if result.get('username'):
+                    st.markdown(f"""
+                    <div class="username-display">
+                        👤 اسم المستخدم: @{result['username']}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # عرض النتيجة
                 color_class = f"result-{result.get('color', 'info')}"
                 
                 st.markdown(f"""
@@ -465,62 +390,67 @@ with col1:
                 """, unsafe_allow_html=True)
                 
                 # عرض التفاصيل الفنية
-                with st.expander("🔧 التفاصيل الفنية والأدلة"):
+                with st.expander("🔧 التفاصيل الفنية"):
                     st.markdown(f"""
-                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; border-right: 4px solid #007bff;">
-                        <p><strong>🔍 أدلة التحليل:</strong></p>
-                        <code style="background: white; padding: 15px; border-radius: 5px; display: block; margin-top: 10px;">
-                            {result['evidence']}
-                        </code>
-                        <p style="margin-top: 15px; color: #6c757d; font-size: 0.9em;">
-                            تم التحليل في: {time.strftime("%Y-%m-%d %H:%M:%S")}
+                    <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 10px; direction: ltr;">
+                        <p><strong>📊 نتائج الفحص المتعدد:</strong></p>
+                        <code>{result['evidence']}</code>
+                        <p style="margin-top: 1rem; color: #6c757d;">
+                            وقت الفحص: {time.strftime("%Y-%m-%d %H:%M:%S")}
                         </p>
                     </div>
                     """, unsafe_allow_html=True)
         else:
-            st.error("⚠️ الرجاء إدخال رابط الحساب أولاً")
+            st.error("⚠️ الرجاء إدخال رابط الحساب أو اسم المستخدم")
 
 with col2:
     st.markdown("""
-    <div class="guide-box">
-        <h3>📊 دليل الحالات</h3>
-        <div class="status-legend">
-            <div class="status-item status-active">
-                ✅ حساب نشط - يعمل بشكل طبيعي
-            </div>
-            <div class="status-item status-suspended">
-                ⛔ حساب موقوف - معلق من الإدارة
-            </div>
-            <div class="status-item status-protected">
-                🔒 حساب محمي - خاص بالمتابعين
-            </div>
-            <div class="status-item status-notfound">
-                ❌ غير موجود - محذوف أو غير صحيح
-            </div>
+    <div class="guide-section">
+        <h3>📊 أنواع الحالات</h3>
+        
+        <div class="status-example status-active">
+            <strong>✅ حساب نشط</strong><br>
+            يعمل بشكل طبيعي ويمكن الوصول إليه
         </div>
         
-        <h3>📖 كيفية الاستخدام</h3>
-        <ol style="text-align: right; padding-right: 20px;">
-            <li>انسخ رابط الحساب من إكس</li>
-            <li>ألصقه في المربع أعلاه</li>
-            <li>اضغط على "فحص الحساب"</li>
-            <li>انتظر النتيجة (5-10 ثواني)</li>
-        </ol>
+        <div class="status-example status-suspended">
+            <strong>⛔ حساب موقوف</strong><br>
+            تم تعليقه من قبل الإدارة
+        </div>
         
-        <h3>💡 نصائح مهمة</h3>
-        <ul style="text-align: right; padding-right: 20px;">
-            <li>تأكد من صحة الرابط</li>
-            <li>الأداة تعمل مع روابط x.com و twitter.com</li>
-            <li>النتائج دقيقة بنسبة 95% أو أكثر</li>
-            <li>في حالة الخطأ، حاول مرة أخرى</li>
+        <div class="status-example status-protected">
+            <strong>🔒 حساب محمي</strong><br>
+            خاص ومحدود على المتابعين
+        </div>
+        
+        <div class="status-example status-notfound">
+            <strong>❌ غير موجود</strong><br>
+            محذوف أو غير صحيح
+        </div>
+        
+        <h3>🎯 مميزات الأداة</h3>
+        <ul style="padding-right: 1.5rem;">
+            <li>فحص متعدد الطرق للدقة</li>
+            <li>يدعم جميع أشكال الروابط</li>
+            <li>تحليل ذكي للنتائج</li>
+            <li>واجهة عربية سهلة</li>
         </ul>
+        
+        <h3>📖 كيفية الاستخدام</h3>
+        <ol style="padding-right: 1.5rem;">
+            <li>أدخل رابط الحساب أو اسم المستخدم</li>
+            <li>اضغط على "فحص الحساب"</li>
+            <li>انتظر النتيجة (10-15 ثانية)</li>
+            <li>راجع التفاصيل الفنية إذا لزم الأمر</li>
+        </ol>
     </div>
     """, unsafe_allow_html=True)
 
 # الفوتر
+st.markdown("---")
 st.markdown("""
-<div class="footer">
-    <p>© 2024 أداة فحص حسابات إكس المطورة | الإصدار 2.0</p>
-    <p>تم التطوير باستخدام تقنيات متقدمة لضمان الدقة والسرعة</p>
+<div style="text-align: center; padding: 2rem; color: #6c757d;">
+    <p><strong>فاحص حسابات إكس المطور</strong> | الإصدار 2.1</p>
+    <p>يستخدم طرق فحص متعددة لضمان الدقة العالية</p>
 </div>
 """, unsafe_allow_html=True)
