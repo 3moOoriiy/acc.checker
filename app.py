@@ -148,83 +148,136 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS مخصص
+# CSS مخصص بدون خلفية بيضاء
 st.markdown("""
 <style>
+    :root {
+        --primary-color: #1DA1F2;
+        --secondary-color: #0066FF;
+        --success-color: #2ecc71;
+        --danger-color: #ff4b4b;
+        --warning-color: #ffcc00;
+        --info-color: #95a5a6;
+        --light-bg: #f8f9fa;
+        --dark-text: #212529;
+    }
+    
+    body {
+        background-color: var(--light-bg) !important;
+        color: var(--dark-text);
+    }
+    
     .rtl {
         direction: rtl;
         text-align: right;
         font-family: 'Tahoma', 'Arial', sans-serif;
     }
+    
     .header {
-        background: linear-gradient(90deg, #1DA1F2 0%, #0066FF 100%);
+        background: linear-gradient(90deg, var(--primary-color) 0%, var(--secondary-color) 100%);
         color: white;
         padding: 20px;
         border-radius: 10px;
         margin-bottom: 20px;
         text-align: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
+    
     .result-card {
         border-radius: 10px;
         padding: 20px;
         margin: 15px 0;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        border-right: 5px solid;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        border: none;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(5px);
     }
+    
     .suspended-card {
-        border-color: #ff4b4b;
-        background-color: #fff5f5;
+        border-left: 5px solid var(--danger-color);
+        background: linear-gradient(135deg, rgba(255, 245, 245, 0.9) 0%, rgba(255, 236, 236, 0.9) 100%);
     }
+    
     .active-card {
-        border-color: #2ecc71;
-        background-color: #f5fff7;
+        border-left: 5px solid var(--success-color);
+        background: linear-gradient(135deg, rgba(245, 255, 247, 0.9) 0%, rgba(232, 245, 233, 0.9) 100%);
     }
+    
     .unknown-card {
-        border-color: #ffcc00;
-        background-color: #fffdf5;
+        border-left: 5px solid var(--warning-color);
+        background: linear-gradient(135deg, rgba(255, 253, 245, 0.9) 0%, rgba(255, 248, 225, 0.9) 100%);
     }
+    
     .error-card {
-        border-color: #95a5a6;
-        background-color: #f5f5f5;
+        border-left: 5px solid var(--info-color);
+        background: linear-gradient(135deg, rgba(245, 245, 245, 0.9) 0%, rgba(224, 224, 224, 0.9) 100%);
     }
+    
     .evidence-box {
-        background-color: #f8f9fa;
+        background: rgba(0, 0, 0, 0.03);
         padding: 15px;
         border-radius: 8px;
         margin: 10px 0;
         font-family: 'Courier New', monospace;
+        border: 1px solid rgba(0, 0, 0, 0.1);
     }
+    
+    .metrics-box {
+        background: rgba(29, 161, 242, 0.05);
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+        border: 1px solid rgba(29, 161, 242, 0.1);
+    }
+    
     .confidence-badge {
         display: inline-block;
         padding: 3px 8px;
         border-radius: 12px;
         font-size: 14px;
         font-weight: bold;
+        background-color: var(--primary-color);
+        color: white;
     }
-    .metrics-box {
-        background-color: #f0f8ff;
-        padding: 15px;
-        border-radius: 8px;
-        margin: 10px 0;
+    
+    .metric-card {
+        border-left: 4px solid var(--primary-color);
+        padding: 10px;
+        margin: 5px 0;
+        background-color: rgba(248, 249, 250, 0.7);
     }
+    
     .stTextInput input {
         padding: 12px !important;
         font-size: 16px !important;
         text-align: right;
+        background-color: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
     }
+    
     .stButton button {
-        background: linear-gradient(90deg, #1DA1F2 0%, #0066FF 100%) !important;
+        background: linear-gradient(90deg, var(--primary-color) 0%, var(--secondary-color) 100%) !important;
         color: white !important;
         font-size: 18px !important;
         height: 50px !important;
         border-radius: 8px !important;
         width: 100% !important;
+        border: none;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
     }
-    .metric-card {
-        border-left: 4px solid #1DA1F2;
-        padding: 10px;
-        margin: 5px 0;
-        background-color: #f8f9fa;
+    
+    .stButton button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+    
+    hr {
+        border: none;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.1) 50%, transparent 100%);
+        margin: 20px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -256,7 +309,7 @@ with col1:
                 # عرض النتائج
                 st.markdown(f"""
                 <div class="result-card rtl {card_class}">
-                    <h2>{result['status']} <span class="confidence-badge" style="background-color: {'#ff4b4b' if 'موقوف' in result['status'] else '#2ecc71' if 'نشط' in result['status'] else '#ffcc00' if 'غير محددة' in result['status'] else '#95a5a6'}; color: white;">{result['confidence']}</span></h2>
+                    <h2>{result['status']} <span class="confidence-badge">{result['confidence']}</span></h2>
                     <p><strong>التفاصيل:</strong> {result['details']}</p>
                     <p><strong>السبب:</strong> {result['reason']}</p>
                     
@@ -296,25 +349,37 @@ with col2:
         <h3>🎯 دليل الاستخدام:</h3>
         
         <h4>🔍 أنواع الحسابات:</h4>
-        <p><strong>✅ الحسابات النشطة:</strong> تعمل بشكل طبيعي</p>
-        <p><strong>⛔ الحسابات الموقوفة:</strong> معلقة من المنصة</p>
-        <p><strong>🔒 الحسابات الخاصة:</strong> تحتاج متابعة</p>
+        <div class="metric-card">
+            <p><strong>✅ الحسابات النشطة:</strong> تعمل بشكل طبيعي</p>
+        </div>
+        <div class="metric-card">
+            <p><strong>⛔ الحسابات الموقوفة:</strong> معلقة من المنصة</p>
+        </div>
+        <div class="metric-card">
+            <p><strong>🔒 الحسابات الخاصة:</strong> تحتاج متابعة</p>
+        </div>
         
         <h4>⚙️ كيفية الاستخدام:</h4>
-        <ol>
-            <li>أدخل رابط الحساب</li>
-            <li>انقر على "فحص متقدم"</li>
-            <li>انتظر ظهور النتائج</li>
-        </ol>
-        
-        <h4>📊 معايير الأداء:</h4>
-        <ul>
-            <li><strong>دقة الكشف:</strong> 98%</li>
-            <li><strong>سرعة التحليل:</strong> أقل من 1.5 ثانية</li>
-            <li><strong>معدل الثقة:</strong> ★★★★☆</li>
-        </ul>
+        <div class="metric-card">
+            <ol>
+                <li>أدخل رابط الحساب</li>
+                <li>انقر على "فحص متقدم"</li>
+                <li>انتظر ظهور النتائج</li>
+            </ol>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.markdown('<div class="rtl"><p>© 2024 نظام الفحص المتقدم - إصدار 4.3.0 | تم التحديث ليدعم أحدث تغييرات إكس</p></div>', unsafe_allow_html=True)
+st.markdown("""
+<div class="rtl">
+    <div class="metric-card">
+        <p><strong>📊 معايير الأداء:</strong></p>
+        <p>• دقة الكشف: 98%</p>
+        <p>• سرعة التحليل: أقل من 1.5 ثانية</p>
+        <p>• معدل الثقة: ★★★★☆</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="rtl"><p>© 2024 نظام الفحص المتقدم - إصدار 4.4.0 | تم التحديث ليدعم أحدث تغييرات إكس</p></div>', unsafe_allow_html=True)
