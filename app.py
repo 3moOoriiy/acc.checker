@@ -10,7 +10,7 @@ def advanced_x_account_check(url):
             "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
         }
         
-        # تنظيف وتحسين الرابط
+        # تنظيف الرابط
         url = re.sub(r'https?://(www\.)?', 'https://', url.strip())
         if not url.startswith('https://'):
             url = f'https://{url}'
@@ -20,110 +20,100 @@ def advanced_x_account_check(url):
         
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # نظام الكشف المتقدم
+        # نظام الكشف المحسن
         def check_suspension():
             suspension_patterns = [
-                # أنماط HTML الدقيقة للإيقاف
                 {'element': 'div', 'attrs': {'data-testid': 'empty_state_header_text'}, 'text': 'Account suspended'},
-                {'element': 'div', 'attrs': {'data-testid': 'empty_state_body_text'}, 'text': 'X suspends accounts'},
                 {'element': 'div', 'attrs': {'class': 'css-175oi2r r-1kihuf0 r-1xk7izq'}},
-                {'element': 'div', 'attrs': {'class': 'r-1kihuf0 r-1xk7izq'}},
-                {'element': 'div', 'attrs': {'data-testid': 'emptyState'}},
-                {'element': 'span', 'attrs': {'class': 'css-1jxf684'}, 'text': 'Account suspended'},
-                
-                # أنماط النصوص العربية
-                {'text': 'حساب موقوف'},
-                {'text': 'تم تعليق الحساب'},
-                {'text': 'الحساب غير متاح'},
+                {'element': 'div', 'attrs': {'data-testid': 'empty_state_header_text'}, 'text': 'حساب موقوف'},
+                {'element': 'span', 'text': 'تم تعليق الحساب'},
                 {'text': 'account_status":"suspended"'}
             ]
             
             for pattern in suspension_patterns:
-                if 'element' in pattern:
-                    element = soup.find(pattern['element'], attrs=pattern.get('attrs', {}))
-                    if element:
-                        if 'text' in pattern:
-                            if re.search(pattern['text'], element.get_text(), re.IGNORECASE):
-                                return True
-                        else:
+                try:
+                    if 'element' in pattern:
+                        elements = soup.find_all(pattern['element'], attrs=pattern.get('attrs', {}))
+                        for element in elements:
+                            if 'text' in pattern:
+                                if element and re.search(pattern['text'], element.get_text(), re.IGNORECASE):
+                                    return True
+                            else:
+                                if element:
+                                    return True
+                    elif 'text' in pattern:
+                        if soup.find(string=re.compile(pattern['text'], re.IGNORECASE)):
                             return True
-                elif 'text' in pattern:
-                    if soup.find(string=re.compile(pattern['text'], re.IGNORECASE)):
-                        return True
+                except Exception:
+                    continue
             return False
 
         def check_activity():
-            activity_elements = [
+            activity_indicators = [
                 {'element': 'div', 'attrs': {'data-testid': 'UserProfileHeader_Items'}},
                 {'element': 'div', 'attrs': {'data-testid': 'UserDescription'}},
-                {'element': 'img', 'attrs': {'alt': 'Profile image'}},
-                {'element': 'button', 'attrs': {'data-testid': re.compile(r'follow|unfollow')}},
-                {'element': 'div', 'attrs': {'data-testid': 'UserProfileHeader_Items'}},
-                {'element': 'div', 'attrs': {'data-testid': 'primaryColumn'}},
-                {'element': 'div', 'attrs': {'data-testid': 'tweet'}},
                 {'element': 'div', 'attrs': {'data-testid': 'UserName'}},
-                {'element': 'a', 'attrs': {'href': re.compile(r'/following')}},
-                {'element': 'a', 'attrs': {'href': re.compile(r'/followers')}}
+                {'element': 'div', 'attrs': {'data-testid': 'tweet'}},
+                {'element': 'a', 'attrs': {'href': re.compile(r'/followers')}},
+                {'element': 'img', 'attrs': {'alt': 'Profile image'}}
             ]
             
-            return any(soup.find(e['element'], attrs=e.get('attrs', {})) for e in activity_elements)
+            for indicator in activity_indicators:
+                try:
+                    if soup.find(indicator['element'], attrs=indicator.get('attrs', {})):
+                        return True
+                except Exception:
+                    continue
+            return False
 
-        # التحقق الدقيق
+        # التحليل المحسن
         if check_suspension():
             return {
-                "status": "مقفول (موقوف)",
-                "icon": "⛔",
-                "reason": "تم تعليق الحساب رسمياً",
-                "details": "الحساب مخالف لشروط إكس أو تم إيقافه",
-                "confidence": "100%",
+                "status": "⛔ الحساب موقوف",
+                "details": "تم تعليق هذا الحساب من قبل إدارة المنصة",
+                "reason": "انتهاك شروط الخدمة أو القوانين",
+                "confidence": "95%",
                 "evidence": "تم العثور على علامات التعليق الرسمية"
             }
         
         if check_activity():
             return {
-                "status": "مفتوح (نشط)",
-                "icon": "✅",
-                "reason": "الحساب يعمل بشكل طبيعي",
-                "details": "تم التحقق من المحتوى النشط والتفاعلات",
-                "confidence": "99%",
-                "evidence": "وجود عناصر الملف الشخصي والنشاط والتغريدات"
+                "status": "✅ الحساب نشط",
+                "details": "الحساب يعمل بشكل طبيعي ويظهر المحتوى",
+                "reason": "جميع المؤشرات تدل على النشاط",
+                "confidence": "98%",
+                "evidence": "تم اكتشاف عناصر الملف الشخصي والتغريدات"
             }
         
         return {
-            "status": "غير محدد",
-            "icon": "❓",
-            "reason": "لا يمكن تحديد الحالة بدقة",
-            "details": "لم يتم العثور على بيانات كافية",
-            "confidence": "50%",
-            "evidence": "لا توجد أدلة كافية"
+            "status": "❓ حالة غير محددة",
+            "details": "لم نتمكن من تحديد حالة الحساب بدقة",
+            "reason": "بيانات غير كافية أو شكل غير معروف",
+            "confidence": "40%",
+            "evidence": "لا توجد أدلة كافية لتحديد الحالة"
         }
 
     except requests.HTTPError as e:
-        if e.response.status_code == 404:
-            return {
-                "status": "غير موجود",
-                "icon": "❌",
-                "reason": "الحساب محذوف أو غير صحيح",
-                "details": "الرمز 404: الصفحة غير موجودة",
-                "confidence": "100%",
-                "evidence": f"استجابة الخادم: {e.response.status_code}"
-            }
+        error_status = {
+            404: ("❌ الحساب غير موجود", "الرابط غير صحيح أو الحساب محذوف"),
+            403: ("⛔ الدخول مرفوض", "الحساب خاص أو محمي"),
+            401: ("🔒 يتطلب مصادقة", "الحساب يحتاج تسجيل دخول")
+        }.get(e.response.status_code, (f"❗ خطأ {e.response.status_code}", "حدث خطأ غير متوقع"))
+        
         return {
-            "status": "خطأ",
-            "icon": "❗",
-            "reason": f"خطأ HTTP: {e.response.status_code}",
-            "details": str(e),
-            "confidence": "0%",
-            "evidence": "فشل في الاتصال بالخادم"
+            "status": error_status[0],
+            "details": error_status[1],
+            "reason": f"استجابة الخادم: {e.response.status_code}",
+            "confidence": "100%",
+            "evidence": str(e)
         }
     except Exception as e:
         return {
-            "status": "خطأ",
-            "icon": "❗",
-            "reason": "خطأ غير متوقع",
-            "details": str(e),
+            "status": "❗ خطأ فني",
+            "details": "حدث خطأ أثناء التحليل",
+            "reason": "مشكلة تقنية غير متوقعة",
             "confidence": "0%",
-            "evidence": "حدث خطأ غير متوقع"
+            "evidence": str(e)
         }
 
 # واجهة المستخدم المحسنة
@@ -133,12 +123,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS متقدم
+# CSS مخصص
 st.markdown("""
 <style>
     .rtl {
         direction: rtl;
         text-align: right;
+        font-family: 'Tahoma', 'Arial', sans-serif;
     }
     .header {
         background: linear-gradient(90deg, #1DA1F2 0%, #0066FF 100%);
@@ -176,7 +167,7 @@ st.markdown("""
         padding: 15px;
         border-radius: 8px;
         margin: 10px 0;
-        font-family: monospace;
+        font-family: 'Courier New', monospace;
     }
     .confidence-badge {
         display: inline-block;
@@ -188,6 +179,7 @@ st.markdown("""
     .stTextInput input {
         padding: 12px !important;
         font-size: 16px !important;
+        text-align: right;
     }
     .stButton button {
         background: linear-gradient(90deg, #1DA1F2 0%, #0066FF 100%) !important;
@@ -215,19 +207,21 @@ with col1:
                 
                 # تحديد فئة النتيجة
                 card_class = {
-                    "مقفول (موقوف)": "suspended-card",
-                    "مفتوح (نشط)": "active-card",
-                    "غير محدد": "unknown-card",
-                    "خطأ": "error-card",
-                    "غير موجود": "error-card"
+                    "⛔ الحساب موقوف": "suspended-card",
+                    "✅ الحساب نشط": "active-card",
+                    "❓ حالة غير محددة": "unknown-card",
+                    "❗ خطأ فني": "error-card",
+                    "❌ الحساب غير موجود": "error-card",
+                    "⛔ الدخول مرفوض": "error-card",
+                    "🔒 يتطلب مصادقة": "error-card"
                 }.get(result['status'], "")
                 
                 # عرض النتائج
                 st.markdown(f"""
                 <div class="result-card rtl {card_class}">
-                    <h2>{result['icon']} {result['status']} <span class="confidence-badge" style="background-color: {'#ff4b4b' if 'مقفول' in result['status'] else '#2ecc71' if 'مفتوح' in result['status'] else '#ffcc00' if result['status'] == 'غير محدد' else '#95a5a6'}; color: white;">{result.get('confidence', '')}</span></h2>
-                    <p><strong>السبب:</strong> {result['reason']}</p>
+                    <h2>{result['status']} <span class="confidence-badge" style="background-color: {'#ff4b4b' if 'موقوف' in result['status'] else '#2ecc71' if 'نشط' in result['status'] else '#ffcc00' if 'غير محددة' in result['status'] else '#95a5a6'}; color: white;">{result['confidence']}</span></h2>
                     <p><strong>التفاصيل:</strong> {result['details']}</p>
+                    <p><strong>السبب:</strong> {result['reason']}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -237,35 +231,33 @@ with col1:
                     <div class="rtl">
                         <h4>أدلة الإثبات:</h4>
                         <div class="evidence-box">{result['evidence']}</div>
-                        <h4>مستوى الثقة: {result['confidence']}</h4>
+                        <p><strong>مستوى الثقة:</strong> {result['confidence']}</p>
                     </div>
                     """, unsafe_allow_html=True)
                 
                 # تأثيرات بصرية
-                if "مفتوح" in result['status']:
+                if "نشط" in result['status']:
                     st.balloons()
-                elif "مقفول" in result['status']:
+                elif "موقوف" in result['status']:
                     st.error("تنبيه: هذا الحساب موقوف رسمياً")
-        else:
-            st.warning("الرجاء إدخال رابط الحساب أولاً")
 
 with col2:
     st.markdown("""
     <div class="rtl">
         <h3>🎯 دليل الاستخدام:</h3>
-        <p><strong>الحسابات المفتوحة:</strong> ✅ (نشطة)</p>
-        <p><strong>الحسابات المقفولة:</strong> ⛔ (موقوفة)</p>
-        <p><strong>الحسابات المحذوفة:</strong> ❌ (غير موجودة)</p>
+        <p><strong>الحسابات النشطة:</strong> ✅</p>
+        <p><strong>الحسابات الموقوفة:</strong> ⛔</p>
+        <p><strong>الحسابات المحذوفة:</strong> ❌</p>
         
         <h3>🔍 نصائح مهمة:</h3>
         <ul>
             <li>تأكد من كتابة الرابط بشكل صحيح</li>
             <li>النتائج الدقيقة قد تستغرق 20 ثانية</li>
             <li>استخدم التقرير الفني للإثبات</li>
-            <li>النتائج ذات الثقة العالية (90%+) موثوقة</li>
+            <li>النتائج ذات الثقة فوق 90% موثوقة</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.markdown('<div class="rtl"><p>© 2024 نظام الفحص المتقدم - إصدار 4.1.0 | تم التحديث ليدعم أحدث تغييرات إكس</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="rtl"><p>© 2024 نظام الفحص المتقدم - إصدار 4.2.0 | تم التحديث ليدعم أحدث تغييرات إكس</p></div>', unsafe_allow_html=True)
