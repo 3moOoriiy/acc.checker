@@ -1,85 +1,179 @@
-import streamlit as st
-import requests
-import re
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>أداة فحص حالة الحسابات</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1DA1F2;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #1DA1F2;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #1991db;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .loading {
+            text-align: center;
+            margin: 20px 0;
+            display: none;
+        }
+        .note {
+            font-size: 14px;
+            color: #666;
+            margin-top: 30px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 أداة فحص حالة الحسابات</h1>
+        
+        <div class="form-group">
+            <label for="platform">اختر المنصة:</label>
+            <select id="platform">
+                <option value="twitter">تويتر/إكس</option>
+                <option value="tiktok">تيك توك</option>
+                <option value="reddit">ريديت</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="url">رابط الحساب:</label>
+            <input type="text" id="url" placeholder="https://x.com/اسم_المستخدم">
+        </div>
+        
+        <button onclick="checkAccount()">فحص الحالة</button>
+        
+        <div id="loading" class="loading">
+            <p>جاري التحقق من الحساب، الرجاء الانتظار...</p>
+        </div>
+        
+        <div id="result" class="result"></div>
+        
+        <div class="note">
+            ملاحظة: هذه الأداة لا تضمن دقة 100% خاصة للحسابات المعلقة مؤقتاً
+        </div>
+    </div>
 
-def التحقق_من_حالة_الحساب(رابط, المنصة):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
-    }
-
-    try:
-        # تنظيف الرابط والتأكد من صحته
-        رابط = re.sub(r'https?://(www\.)?', 'https://', رابط.strip())
-        if not رابط.startswith('https://'):
-            رابط = f'https://{رابط}'
-
-        response = requests.get(رابط, headers=headers, timeout=15)
-        content = response.text.lower()
-
-        if المنصة == "تويتر/إكس":
-            # علامات التعليق الأكثر دقة (تم تحديثها)
-            علامات_التعليق = [
-                r'account[\s_]*suspended',
-                r'x[\s_]*suspends[\s_]*accounts',
-                r'حساب[\s_]*موقوف',
-                r'تم[\s_]*تعليق[\s_]*الحساب',
-                r'account_status[":\s]+suspended',
-                r'suspendedaccount',
-                r'تعليق[\s_]*الحساب',
-                r'<title>حساب موقوف</title>',
-                r'content="حساب موقوف"',
-                r'حسابك مغلق'
-            ]
-
-            if any(re.search(pattern, content) for pattern in علامات_التعليق):
-                return "⚠️ الحساب موقوف (معلق)"
+    <script>
+        async function checkAccount() {
+            const platform = document.getElementById('platform').value;
+            let url = document.getElementById('url').value.trim();
             
-            # تحسين اكتشاف الحسابات المحذوفة
-            if re.search(r'this[\s_]*account[\s_]*doesn[\'’]t[\s_]*exist|page[\s_]*doesn[\'’]t[\s_]*exist|الحساب[\s_]*غير[\s_]*موجود', content):
-                return "❌ الحساب غير موجود أو محذوف"
+            if (!url) {
+                alert('الرجاء إدخال رابط الحساب');
+                return;
+            }
             
-            # إذا لم يكن هناك محتوى للمستخدم
-            if re.search(r'no[\s_]*tweets[\s_]*yet|لا[\s_]*يوجد[\s_]*محتوى|هذا[\s_]*المستخدم[\s_]*ليس[\s_]*لديه[\s_]*تغريدات', content):
-                return "⚠️ الحساب فارغ (قد يكون جديدًا أو موقوفًا)"
+            // إضافة https:// إذا لم يكن موجوداً
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                url = 'https://' + url;
+            }
             
-            return "✅ الحساب نشط (العمليات فقط)"
-
-    except requests.RequestException as e:
-        return f"❌ خطأ في الاتصال: {str(e)}"
-
-# واجهة المستخدم المحسنة
-st.set_page_config(page_title="🔍 فحص حالة الحسابات - النسخة النهائية", layout="centered")
-st.title("🔍 فحص حالة الحسابات بدقة عالية")
-
-with st.expander("تعليمات الاستخدام"):
-    st.write("""
-    1. اختر المنصة المطلوبة (تويتر/إكس)
-    2. أدخل رابط الحساب بشكل صحيح
-    3. اضغط على زر الفحص الدقيق
-    4. انتظر حتى تظهر النتيجة
-    """)
-
-المنصة = st.selectbox("اختر المنصة:", ["تويتر/إكس"])
-رابط = st.text_input("رابط الحساب", placeholder="https://x.com/اسم_المستخدم", help="أدخل الرابط كاملاً مثل: https://x.com/mohamed_ali")
-
-if st.button("فحص دقيق", type="primary"):
-    if رابط:
-        with st.spinner("جاري الفحص بعمق، الرجاء الانتظار..."):
-            النتيجة = التحقق_من_حالة_الحساب(رابط, المنصة)
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
             
-            if "موقوف" in النتيجة:
-                st.error(النتيجة)
-                st.warning("ملاحظة: تم اكتشاف أن الحساب موقوف")
-            elif "غير موجود" in النتيجة:
-                st.warning(النتيجة)
-            elif "فارغ" in النتيجة:
-                st.info(النتيجة)
-            else:
-                st.success(النتيجة)
-                st.info("العمليات فقط ✅")
-    else:
-        st.warning("الرجاء إدخال رابط الحساب أولاً")
-
-st.markdown("---")
-st.caption("ملاحظة: هذه الأداة توفر دقة عالية ولكنها لا تضمن 100% خاصة للحسابات المعلقة مؤقتًا")
+            try {
+                // استخدام CORS Anywhere للتحايل على قيود CORS (لأغراض الاختبار فقط)
+                const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+                const response = await fetch(proxyUrl + url, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                const html = await response.text();
+                const resultDiv = document.getElementById('result');
+                
+                if (platform === 'twitter') {
+                    if (/account\s*suspended|حساب\s*موقوف|تم\s*تعليق\s*الحساب/i.test(html)) {
+                        resultDiv.className = 'result error';
+                        resultDiv.innerHTML = '⚠️ الحساب موقوف (معلق)';
+                    } else if (/this\s*account\s*doesn\'t\s*exist|الحساب\s*غير\s*موجود/i.test(html)) {
+                        resultDiv.className = 'result warning';
+                        resultDiv.innerHTML = '❌ الحساب غير موجود أو محذوف';
+                    } else {
+                        resultDiv.className = 'result success';
+                        resultDiv.innerHTML = '✅ الحساب نشط (العمليات فقط)';
+                    }
+                }
+                // يمكن إضافة منصات أخرى هنا...
+                
+                resultDiv.style.display = 'block';
+                
+            } catch (error) {
+                document.getElementById('result').className = 'result error';
+                document.getElementById('result').innerHTML = '❌ حدث خطأ أثناء التحقق: ' + error.message;
+                document.getElementById('result').style.display = 'block';
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
