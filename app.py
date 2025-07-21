@@ -3,7 +3,7 @@ import requests
 import re
 from bs4 import BeautifulSoup
 
-def advanced_x_account_check(url):
+def advanced_account_check(url):
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -20,15 +20,16 @@ def advanced_x_account_check(url):
         
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # نظام متعدد الطبقات للكشف عن التعليق
+        # نظام متعدد الطبقات للكشف
         checks = [
             {
                 "name": "تحليل العلامات الوصفية",
                 "patterns": [
                     r'meta[^>]*suspended', 
                     r'meta[^>]*موقوف',
-                    r'account_status":"suspended'
-                ]
+                    r'account_status":"suspended"'
+                ],
+                "type": "suspension"
             },
             {
                 "name": "تحليل بنية الصفحة",
@@ -36,7 +37,8 @@ def advanced_x_account_check(url):
                     {'name': 'div', 'attrs': {'data-testid': 'empty_state_header_text'}},
                     {'name': 'div', 'class': 'account-suspended'},
                     {'name': 'div', 'string': re.compile(r'Account suspended', re.I)}
-                ]
+                ],
+                "type": "suspension"
             },
             {
                 "name": "تحليل المحتوى النصي",
@@ -45,29 +47,49 @@ def advanced_x_account_check(url):
                     r'حساب موقوف',
                     r'تم تعليق الحساب',
                     r'This account is suspended'
-                ]
+                ],
+                "type": "suspension"
+            },
+            {
+                "name": "تحليل المحتوى النشط",
+                "elements": [
+                    {'name': 'div', 'attrs': {'data-testid': 'UserProfile'}},
+                    {'name': 'img', 'attrs': {'alt': 'Profile image'}},
+                    {'name': 'div', 'attrs': {'data-testid': 'UserDescription'}}
+                ],
+                "type": "activity"
             }
         ]
 
-        # تنفيذ جميع الفحوصات
         findings = []
+        suspension_found = False
+        activity_found = False
+
         for check in checks:
             if 'patterns' in check:
                 for pattern in check['patterns']:
                     if re.search(pattern, str(soup), re.IGNORECASE):
                         findings.append(f"{check['name']}: وجدت {pattern}")
+                        if check['type'] == "suspension":
+                            suspension_found = True
             
             if 'elements' in check:
                 for element in check['elements']:
                     if soup.find(**element):
-                        findings.append(f"{check['name']}: وجدت {element}")
+                        findings.append(f"{check['name']}: وجدت {str(element)}")
+                        if check['type'] == "suspension":
+                            suspension_found = True
+                        elif check['type'] == "activity":
+                            activity_found = True
             
             if 'text_patterns' in check:
                 for pattern in check['text_patterns']:
                     if soup.find(string=re.compile(pattern, re.IGNORECASE)):
                         findings.append(f"{check['name']}: وجدت {pattern}")
+                        if check['type'] == "suspension":
+                            suspension_found = True
 
-        if findings:
+        if suspension_found:
             return {
                 "status": "موقوف",
                 "icon": "⛔",
@@ -78,28 +100,16 @@ def advanced_x_account_check(url):
                 "findings": findings,
                 "html_snippet": str(soup.find('body'))[:500] + "..." if soup.find('body') else ""
             }
-
-        # فحص إضافي للمحتوى الفعلي
-        content_checks = [
-            ("tweet", {'data-testid': 'tweet'}),
-            ("header", {'role': 'heading'}),
-            ("profile", {'data-testid': 'UserProfile'})
-        ]
-
-        active_content = []
-        for name, attrs in content_checks:
-            if soup.find(attrs=attrs):
-                active_content.append(name)
-
-        if active_content:
+        
+        if activity_found:
             return {
                 "status": "نشط",
                 "icon": "✅",
                 "reason": "الحساب يعمل بشكل طبيعي",
-                "details": f"تم العثور على: {', '.join(active_content)}",
+                "details": "تم العثور على محتوى نشط",
                 "color": "#00aa00",
                 "confidence": "95%",
-                "findings": ["لا يوجد دليل على التعليق"],
+                "findings": findings,
                 "html_snippet": ""
             }
 
@@ -142,7 +152,7 @@ def advanced_x_account_check(url):
             "confidence": "0%"
         }
 
-# واجهة المستخدم الاحترافية
+# واجهة المستخدم
 st.set_page_config(
     page_title="نظام فحص حسابات إكس الاحترافي",
     layout="wide",
@@ -187,6 +197,10 @@ st.markdown("""
         height: 60px !important;
         border-radius: 8px !important;
     }
+    .suspended { color: #ff0000; }
+    .active { color: #00aa00; }
+    .unknown { color: #ffcc00; }
+    .error { color: #666666; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -201,12 +215,20 @@ with col1:
     if st.button("فحص احترافي", key="check_button"):
         if url:
             with st.spinner("جاري التحليل المتعمق، قد يستغرق حتى 20 ثانية..."):
-                result = advanced_x_account_check(url)
+                result = advanced_account_check(url)
                 
                 # عرض النتائج الرئيسية
+                status_class = {
+                    "موقوف": "suspended",
+                    "نشط": "active",
+                    "غير محدد": "unknown",
+                    "خطأ": "error",
+                    "غير موجود": "error"
+                }.get(result['status'], "")
+                
                 st.markdown(f"""
-                <div class="result-card rtl" style="border-left: 5px solid {result['color']};">
-                    <h2 style="color: {result['color']}; margin-top: 0;">{result['icon']} الحالة: {result['status']}</h2>
+                <div class="result-card rtl">
+                    <h2 class="{status_class}">{result['icon']} الحالة: {result['status']}</h2>
                     <p><strong>مستوى الثقة:</strong> {result.get('confidence', 'غير معروف')}</p>
                     <p><strong>السبب:</strong> {result['reason']}</p>
                     <p><strong>التفاصيل:</strong> {result['details']}</p>
@@ -260,4 +282,4 @@ with col2:
     """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.markdown('<div class="rtl"><p>© 2024 نظام الفحص الاحترافي - إصدار 3.0.0 | تم التحديث ليدعم أحدث تغييرات إكس</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="rtl"><p>© 2024 نظام الفحص الاحترافي - إصدار 3.1.0 | تم التحديث ليدعم أحدث تغييرات إكس</p></div>', unsafe_allow_html=True)
