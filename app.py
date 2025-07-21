@@ -20,7 +20,17 @@ def التحقق_من_حالة_الحساب(رابط, المنصة):
             return "✅ الحساب نشط"
 
         elif المنصة == "تويتر/إكس":
-            if "account suspended" in content or "x suspends accounts" in content or "تم تعليق الحساب" in content:
+            # تحسينات لاكتشاف الحسابات المعلقة
+            suspended_keywords = [
+                "account suspended",
+                "x suspends accounts",
+                "تم تعليق الحساب",
+                "حساب موقوف",
+                "account_status\":\"suspended",
+                "this account is suspended"
+            ]
+            
+            if any(keyword in content for keyword in suspended_keywords):
                 return "⚠️ الحساب موقوف"
             elif "this account doesn't exist" in content or "page doesn't exist" in content:
                 return "❌ الحساب غير موجود"
@@ -50,6 +60,11 @@ st.write("أدخل رابط الحساب واختر المنصة للتحقق م
 if st.button("فحص الحالة"):
     if رابط and المنصة:
         with st.spinner("جاري التحقق..."):
+            # تنظيف الرابط وإزالة أي مسافات أو أحرف غير مرغوب فيها
+            رابط = رابط.strip()
+            if not رابط.startswith(('http://', 'https://')):
+                رابط = 'https://' + رابط
+                
             النتيجة = التحقق_من_حالة_الحساب(رابط, المنصة)
             st.success(f"حالة الحساب: {النتيجة}")
     else:
