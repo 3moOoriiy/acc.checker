@@ -1,179 +1,89 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>أداة فحص حالة الحسابات</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-            color: #333;
-        }
-        .container {
-            background-color: white;
-            border-radius: 10px;
-            padding: 25px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #1DA1F2;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-        }
-        select, input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }
-        button {
-            background-color: #1DA1F2;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            width: 100%;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #1991db;
-        }
-        .result {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 5px;
-            text-align: center;
-            font-weight: bold;
-            display: none;
-        }
-        .success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        .warning {
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeeba;
-        }
-        .error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        .loading {
-            text-align: center;
-            margin: 20px 0;
-            display: none;
-        }
-        .note {
-            font-size: 14px;
-            color: #666;
-            margin-top: 30px;
-            text-align: center;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🔍 أداة فحص حالة الحسابات</h1>
-        
-        <div class="form-group">
-            <label for="platform">اختر المنصة:</label>
-            <select id="platform">
-                <option value="twitter">تويتر/إكس</option>
-                <option value="tiktok">تيك توك</option>
-                <option value="reddit">ريديت</option>
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="url">رابط الحساب:</label>
-            <input type="text" id="url" placeholder="https://x.com/اسم_المستخدم">
-        </div>
-        
-        <button onclick="checkAccount()">فحص الحالة</button>
-        
-        <div id="loading" class="loading">
-            <p>جاري التحقق من الحساب، الرجاء الانتظار...</p>
-        </div>
-        
-        <div id="result" class="result"></div>
-        
-        <div class="note">
-            ملاحظة: هذه الأداة لا تضمن دقة 100% خاصة للحسابات المعلقة مؤقتاً
-        </div>
-    </div>
+import streamlit as st
+import requests
+import re
 
-    <script>
-        async function checkAccount() {
-            const platform = document.getElementById('platform').value;
-            let url = document.getElementById('url').value.trim();
+def check_account_status(url, platform):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
+    }
+
+    try:
+        # تنظيف الرابط
+        url = re.sub(r'https?://(www\.)?', 'https://', url.strip())
+        if not url.startswith('https://'):
+            url = f'https://{url}'
+
+        response = requests.get(url, headers=headers, timeout=15)
+        content = response.text.lower()
+
+        if platform == "تويتر/إكس":
+            suspended_patterns = [
+                r'account[\s_]*suspended',
+                r'x[\s_]*suspends[\s_]*accounts',
+                r'حساب[\s_]*موقوف',
+                r'تم[\s_]*تعليق[\s_]*الحساب',
+                r'account_status[":\s]+suspended',
+                r'suspendedaccount',
+                r'تعليق[\s_]*الحساب'
+            ]
+
+            if any(re.search(pattern, content) for pattern in suspended_patterns):
+                return "⚠️ الحساب موقوف"
             
-            if (!url) {
-                alert('الرجاء إدخال رابط الحساب');
-                return;
-            }
+            if re.search(r'this[\s_]*account[\s_]*doesn[\'’]t[\s_]*exist', content):
+                return "❌ الحساب غير موجود"
+                
+            return "✅ الحساب نشط"
+
+    except Exception as e:
+        return f"❌ خطأ: {str(e)}"
+
+# تطبيق واجهة Streamlit
+st.set_page_config(
+    page_title="أداة فحص الحسابات",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
+
+# CSS مخصص
+st.markdown("""
+<style>
+    .stTextInput input, .stSelectbox select {
+        padding: 10px !important;
+        border-radius: 5px !important;
+    }
+    .stButton button {
+        width: 100%;
+        padding: 12px;
+        background-color: #1DA1F2;
+        color: white;
+        border: none;
+        border-radius: 5px;
+    }
+    .stAlert {
+        border-radius: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# واجهة المستخدم
+st.title("🔍 فحص حالة الحسابات")
+st.write("أدخل رابط الحساب للتحقق من حالته")
+
+platform = st.selectbox("اختر المنصة:", ["تويتر/إكس"])
+url = st.text_input("رابط الحساب", placeholder="https://x.com/اسم_المستخدم")
+
+if st.button("فحص الحالة"):
+    if url:
+        with st.spinner("جاري التحقق..."):
+            result = check_account_status(url, platform)
             
-            // إضافة https:// إذا لم يكن موجوداً
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                url = 'https://' + url;
-            }
-            
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('result').style.display = 'none';
-            
-            try {
-                // استخدام CORS Anywhere للتحايل على قيود CORS (لأغراض الاختبار فقط)
-                const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-                const response = await fetch(proxyUrl + url, {
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-                
-                const html = await response.text();
-                const resultDiv = document.getElementById('result');
-                
-                if (platform === 'twitter') {
-                    if (/account\s*suspended|حساب\s*موقوف|تم\s*تعليق\s*الحساب/i.test(html)) {
-                        resultDiv.className = 'result error';
-                        resultDiv.innerHTML = '⚠️ الحساب موقوف (معلق)';
-                    } else if (/this\s*account\s*doesn\'t\s*exist|الحساب\s*غير\s*موجود/i.test(html)) {
-                        resultDiv.className = 'result warning';
-                        resultDiv.innerHTML = '❌ الحساب غير موجود أو محذوف';
-                    } else {
-                        resultDiv.className = 'result success';
-                        resultDiv.innerHTML = '✅ الحساب نشط (العمليات فقط)';
-                    }
-                }
-                // يمكن إضافة منصات أخرى هنا...
-                
-                resultDiv.style.display = 'block';
-                
-            } catch (error) {
-                document.getElementById('result').className = 'result error';
-                document.getElementById('result').innerHTML = '❌ حدث خطأ أثناء التحقق: ' + error.message;
-                document.getElementById('result').style.display = 'block';
-            } finally {
-                document.getElementById('loading').style.display = 'none';
-            }
-        }
-    </script>
-</body>
-</html>
+            if "موقوف" in result:
+                st.error(result)
+            elif "غير موجود" in result:
+                st.warning(result)
+            else:
+                st.success(result)
+    else:
+        st.warning("الرجاء إدخال رابط الحساب")
