@@ -66,7 +66,7 @@ def advanced_x_account_check(url):
 
         if check_suspension():
             return {
-                "status": "⛔ الحساب موقوف",
+                "status": "الحساب موقوف",
                 "details": "تم تعليق هذا الحساب من قبل إدارة المنصة",
                 "reason": "انتهاك شروط الخدمة أو القوانين",
                 "confidence": "95%",
@@ -75,7 +75,7 @@ def advanced_x_account_check(url):
         
         if check_activity():
             return {
-                "status": "✅ الحساب نشط",
+                "status": "الحساب نشط",
                 "details": "الحساب يعمل بشكل طبيعي ويظهر المحتوى",
                 "reason": "جميع المؤشرات تدل على النشاط",
                 "confidence": "98%",
@@ -83,7 +83,7 @@ def advanced_x_account_check(url):
             }
         
         return {
-            "status": "❓ حالة غير محددة",
+            "status": "حالة غير محددة",
             "details": "لم نتمكن من تحديد حالة الحساب بدقة",
             "reason": "بيانات غير كافية أو شكل غير معروف",
             "confidence": "40%",
@@ -92,10 +92,10 @@ def advanced_x_account_check(url):
 
     except requests.HTTPError as e:
         error_status = {
-            404: ("❌ الحساب غير موجود", "الرابط غير صحيح أو الحساب محذوف"),
-            403: ("⛔ الدخول مرفوض", "الحساب خاص أو محمي"),
-            401: ("🔒 يتطلب مصادقة", "الحساب يحتاج تسجيل دخول")
-        }.get(e.response.status_code, (f"❗ خطأ {e.response.status_code}", "حدث خطأ غير متوقع"))
+            404: ("الحساب غير موجود", "الرابط غير صحيح أو الحساب محذوف"),
+            403: ("الدخول مرفوض", "الحساب خاص أو محمي"),
+            401: ("يتطلب مصادقة", "الحساب يحتاج تسجيل دخول")
+        }.get(e.response.status_code, (f"خطأ {e.response.status_code}", "حدث خطأ غير متوقع"))
         
         return {
             "status": error_status[0],
@@ -106,25 +106,26 @@ def advanced_x_account_check(url):
         }
     except Exception as e:
         return {
-            "status": "❗ خطأ فني",
+            "status": "خطأ فني",
             "details": "حدث خطأ أثناء التحليل",
             "reason": "مشكلة تقنية غير متوقعة",
             "confidence": "0%",
             "evidence": str(e)
         }
 
-# إعداد واجهة المستخدم
+# إعداد واجهة المستخدم بدون ألوان
 st.set_page_config(
-    page_title="🔍 أداة فحص حسابات إكس",
+    page_title="أداة فحص حسابات إكس",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# تنسيقات CSS المعدلة
+# CSS بدون أي ألوان
 st.markdown("""
 <style>
     body {
-        background-color: #f5f5f5 !important;
+        background-color: white !important;
+        color: black !important;
     }
     .rtl {
         direction: rtl;
@@ -132,48 +133,41 @@ st.markdown("""
         font-family: 'Tahoma', 'Arial', sans-serif;
     }
     .header {
-        background: #1DA1F2;
-        color: white;
         padding: 20px;
-        border-radius: 8px;
         margin-bottom: 20px;
+        border-bottom: 1px solid #ddd;
     }
     .result-card {
-        background: white;
-        border-radius: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
         padding: 20px;
         margin: 15px 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    .suspended-card {
-        border-right: 4px solid #ff4b4b;
-    }
-    .active-card {
-        border-right: 4px solid #2ecc71;
-    }
-    .unknown-card {
-        border-right: 4px solid #ffcc00;
-    }
-    .error-card {
-        border-right: 4px solid #95a5a6;
     }
     .stTextInput input {
         padding: 12px !important;
         font-size: 16px !important;
         text-align: right;
+        border: 1px solid #ddd !important;
     }
     .stButton button {
-        background: #1DA1F2 !important;
-        color: white !important;
         font-size: 18px !important;
         height: 50px !important;
-        border-radius: 8px !important;
+        border-radius: 4px !important;
+        border: 1px solid #ddd !important;
+        background: white !important;
+        color: black !important;
+    }
+    hr {
+        border: 0;
+        height: 1px;
+        background: #ddd;
+        margin: 20px 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # واجهة التطبيق
-st.markdown('<div class="header rtl"><h1>🔍 أداة فحص حسابات إكس</h1><p>تحقق من حالة أي حساب على منصة إكس (تويتر)</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="header rtl"><h1>أداة فحص حسابات إكس</h1><p>تحقق من حالة أي حساب على منصة إكس (تويتر)</p></div>', unsafe_allow_html=True)
 
 col1, col2 = st.columns([3, 1])
 
@@ -185,18 +179,8 @@ with col1:
             with st.spinner("جاري التحليل..."):
                 result = advanced_x_account_check(url)
                 
-                card_class = {
-                    "⛔ الحساب موقوف": "suspended-card",
-                    "✅ الحساب نشط": "active-card",
-                    "❓ حالة غير محددة": "unknown-card",
-                    "❗ خطأ فني": "error-card",
-                    "❌ الحساب غير موجود": "error-card",
-                    "⛔ الدخول مرفوض": "error-card",
-                    "🔒 يتطلب مصادقة": "error-card"
-                }.get(result['status'], "")
-                
                 st.markdown(f"""
-                <div class="result-card rtl {card_class}">
+                <div class="result-card rtl">
                     <h2>{result['status']}</h2>
                     <p><strong>التفاصيل:</strong> {result['details']}</p>
                     <p><strong>السبب:</strong> {result['reason']}</p>
@@ -208,7 +192,7 @@ with col1:
                     st.markdown(f"""
                     <div class="rtl">
                         <p><strong>أدلة الإثبات:</strong></p>
-                        <div style="background: #f8f9fa; padding: 10px; border-radius: 8px;">
+                        <div style="padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
                             {result['evidence']}
                         </div>
                     </div>
@@ -219,12 +203,12 @@ with col1:
 with col2:
     st.markdown("""
     <div class="rtl">
-        <h3>🎯 دليل الاستخدام</h3>
-        <p><strong>✅ الحسابات النشطة:</strong> تعمل بشكل طبيعي</p>
-        <p><strong>⛔ الحسابات الموقوفة:</strong> تم تعليقها</p>
-        <p><strong>🔒 الحسابات الخاصة:</strong> تحتاج متابعة</p>
+        <h3>دليل الاستخدام</h3>
+        <p><strong>الحسابات النشطة:</strong> تعمل بشكل طبيعي</p>
+        <p><strong>الحسابات الموقوفة:</strong> تم تعليقها</p>
+        <p><strong>الحسابات الخاصة:</strong> تحتاج متابعة</p>
         
-        <h3>⚙️ كيفية الاستخدام</h3>
+        <h3>كيفية الاستخدام</h3>
         <ol>
             <li>أدخل رابط الحساب</li>
             <li>انقر على "فحص الحساب"</li>
